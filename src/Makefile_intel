@@ -52,7 +52,7 @@ endif
 ifeq ($(FC),ifort)
 F90FLAGS = 
 DEBUG_FLAGS = 
-OFLAGS = -O2 -static
+OFLAGS = -O2 -static -qopenmp
 #LINKERFLAGS = -unsharedf95 # for not using runtime libraries
 endif
 

@@ -479,6 +479,9 @@ subroutine lattice_calculations
 
     icount = 0
 
+!$omp parallel do default(shared) &
+!$omp private(j,k,l,icount,atvec1,overlap,amin,rdist2_ref,rdist_surface_ref,i,sepvec,rdist2,rdist_surface,sig2_rdist2,rdist6,rdist12,lj_energy) &
+!$omp schedule(dynamic,10)
     do l=1, ncubesz                                    ! we go cubelet by cubelet
         do k=1, ncubesy
             do j=1, ncubesx
@@ -531,27 +534,33 @@ subroutine lattice_calculations
                 end if
 
                 lattice_space(j,k,l) = 1                          ! otherwise we add it to the list of geometrically accessible cubelets lattice_space(j,k,l) = 1
+!$omp critical
                 ng_cubes = ng_cubes + 1
                 g_cubes(ng_cubes) = icount
+!$omp end critical
 
                 lattice_rdist2(j,k,l) = rdist_surface_ref*rdist_surface_ref ! lattice_rdist2(j,k,l) stores the shortest squared distance between cubelet j, k, l and nearest atom (without overlap)
 
                 if(rdist2_ref>0.25*asigma2_he(atype(amin))) then  ! next few lines detect if the cubelet is accessible to helium atom and update the list of
                     lattice_space_he(j,k,l) = 1                   ! helium accessible cubelets lattice_space_He(j,k,l)
-                    !$omp atomic
+!$omp critical
                     nhe_cubes = nhe_cubes + 1
                     he_cubes(nhe_cubes) = icount
+!$omp end critical
                 end if
 
                 if(rdist2_ref>asigma2_n(atype(amin))) then        ! next few lines detect if the cubelet is accessible to nitrogen atom and update the list of
                     lattice_space_n(j,k,l) = 1                    ! nitrogen accessible cubelets lattice_space_N(j,k,l)
+!$omp critical
                     nn_cubes = nn_cubes + 1
                     n_cubes(nn_cubes) = icount
+!$omp end critical
                 end if
 
             end do
         end do
     end do
+!$omp end parallel do
 
     allocate(PA1(ng_cubes), PA2(ng_cubes), PA3(ng_cubes), PA4(ng_cubes))
     PA1=0.0; PA2=0; PA3=0; PA4=0
@@ -685,6 +694,7 @@ subroutine volumes
 
     pore_v_he = 0.0
 
+!$omp parallel do default(shared) private(i,cube_number,lj_energy,bf) reduction(+:pore_v_he)
     do i=1, nhe_cubes
 
         cube_number = he_cubes(i)
@@ -694,6 +704,7 @@ subroutine volumes
         bf = exp(-lj_energy/temp)                   ! Boltzmann factor for cubelet cube_number
         pore_v_he = pore_v_he + bf                  ! second virial as a sum of Boltzmann factors over all cubelets
     end do
+!$omp end parallel do
 
     pore_v_he = pore_v_he/dble(ntot)            ! averaging over the whole sample
 
@@ -792,6 +803,9 @@ subroutine surface_area
 
     stotal = 0.0      ! initialize cumulative accessible surface area
 
+!$omp parallel do default(shared) &
+!$omp private(i,ncount,j,phi,costheta,theta,atvec1,atvec_temp,nx,ny,nz,deny,k,sepvec,rdist2,sfrac,sjreal) &
+!$omp reduction(+:stotal) schedule(dynamic)
     do i=1, natoms    ! number of atoms in the structure
 
         ncount = 0
@@ -874,6 +888,7 @@ subroutine surface_area
         stotal=stotal+sjreal
 
     end do
+!$omp end parallel do
 
     ! converting stotal on Surface per Volume
 

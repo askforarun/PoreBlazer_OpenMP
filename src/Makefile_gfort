@@ -52,7 +52,7 @@ endif
 ifeq ($(FC),gfortran)
 F90FLAGS = 
 DEBUG_FLAGS = 
-OFLAGS = -O2
+OFLAGS = -O2 -fopenmp
 LINKERFLAGS = 
 endif
 

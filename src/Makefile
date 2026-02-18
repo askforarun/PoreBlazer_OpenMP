@@ -19,7 +19,7 @@ CMD = poreblazer.exe
 # Make sure it is defined
 #          ifeq ($(strip$(FORTRAN_COMPILER)),)
 # Otherwise you can define it here also by uncommenting next line
-FORTRAN_COMPILER= ifort
+FORTRAN_COMPILER= gfortran
 ifeq ($(FORTRAN_COMPILER),)
  FC = defaultCompiler
 else
@@ -52,7 +52,7 @@ endif
 ifeq ($(FC),ifort)
 F90FLAGS = 
 DEBUG_FLAGS = 
-OFLAGS = -O2 -static
+OFLAGS = -O2 -static -qopenmp
 #LINKERFLAGS = -unsharedf95 # for not using runtime libraries
 endif
 
@@ -62,7 +62,7 @@ endif
 ifeq ($(FC),gfortran)
 F90FLAGS = 
 DEBUG_FLAGS = 
-OFLAGS = -O2 -unshared
+OFLAGS = -O2 -fopenmp
 LINKERFLAGS = 
 endif
 
