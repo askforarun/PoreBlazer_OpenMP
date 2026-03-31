@@ -2,6 +2,8 @@
 
 PoreBlazer (v4.0) source code, examples, and reference geometric properties of porous materials.
 
+**Code Refactoring**: The core codebase has been refactored for better maintainability and performance.
+
 ## Recent changes
 
 The latest update adds OpenMP-based parallel performance optimizations in core routines:
@@ -9,7 +11,6 @@ The latest update adds OpenMP-based parallel performance optimizations in core r
 - `lattice_calculations` (major runtime contributor)
 - `surface_area` (Monte Carlo surface area sampling)
 - `volumes` (helium pore-volume calculations)
-- **Code Refactoring**: The core codebase has been refactored for better maintainability and performance.
 
 Build scripts were also updated to compile with OpenMP by default:
 
