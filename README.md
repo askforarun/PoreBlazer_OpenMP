@@ -198,6 +198,9 @@ For large systems, PoreBlazer implements a **linked cell (cell list)** algorithm
   - **Orthorhombic cells** (to take advantage of linked cell pre-filtering).
   - **OpenMP Parallelization** (to distribute the workload across CPU cores).
 
+### Optimal Thread Counts
+For best results, set `OMP_NUM_THREADS` to the number of **physical** CPU cores. Scaling efficiency may decrease for very high thread counts (e.g., above 32-64), especially if the grid size is relatively small.
+
 ## Citation
 
 If you use PB v4.0, please cite the associated PoreBlazer v4.0 publication(s) documented in `src/README_PB_v4.0.txt`.
