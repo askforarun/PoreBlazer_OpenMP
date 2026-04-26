@@ -188,14 +188,14 @@ PoreBlazer (v4.0) is designed to handle systems ranging from small unit cells to
 
 ### Linked Cell Optimization
 For large systems, PoreBlazer implements a **linked cell (cell list)** algorithm. 
-- **Activation**: Automatically enabled as an overlap prefilter for orthorhombic cells with 2,000 or more atoms.
-- **Benefit**: Significantly reduces the computational cost of detecting atom-lattice overlaps.
+- **Activation**: Automatically enabled for orthorhombic cells with 2,000 or more atoms.
+- **Benefit**: Reduces atom-lattice distance work by searching nearby linked-cell bins for overlap checks, helium Lennard-Jones accumulation, and nearest-atom distances.
 
 ### Handling 100,000+ Atoms
 - **Technical Capacity**: Uses 4-byte integers for atom counts, supporting up to ~2 billion atoms.
 - **Memory Efficiency**: Memory usage for atom storage is optimized (e.g., 100,000 atoms require ~10 MB).
-- **Complexity**: The core distance calculation is $O(N_{atoms} \times N_{grid})$. For very large systems, the performance is best maintained using:
-  - **Orthorhombic cells** (to take advantage of linked cell pre-filtering).
+- **Complexity**: Some analyses still scale with lattice size and atom count, but large orthorhombic lattice builds use linked-cell pruning to avoid most all-atom scans. For very large systems, the performance is best maintained using:
+  - **Orthorhombic cells** (to take advantage of linked-cell pruning).
   - **OpenMP Parallelization** (to distribute the workload across CPU cores).
 
 ### Optimal Thread Counts

@@ -468,13 +468,15 @@ subroutine lattice_calculations
     type(vectype)                      :: atvec1, atvec2, sepvec
     real*8                             :: rdist, rdist2, rdist6, rdist12, rdist2_ref, rdist_surface, rdist_surface_ref
     real*8                             :: sigma, sigma6, sigma12,  sig2_rdist2, lj_energy
-    real*8                             :: overlap_rmax, binx, biny, binz
+    real*8                             :: overlap_rmax, overlap_rmax2, cell_rmax, binx, biny, binz
+    real*8                             :: min_bin, cell_min2, search_bound2, shell_min2
     integer*4                          :: i, j, k, l, icount, nstep,amin
-    integer                            :: nbinx, nbiny, nbinz, halo_x, halo_y, halo_z
+    integer                            :: nbinx, nbiny, nbinz
     integer                            :: cx, cy, cz, cxi, cyi, czi, ii, ibx, iby, ibz
+    integer                            :: xoff_min, xoff_max, yoff_min, yoff_max, zoff_min, zoff_max, max_shell, shell
     integer, allocatable               :: head(:,:,:), next_atom(:)
     logical                            :: overlap
-    logical                            :: use_overlap_prefilter
+    logical                            :: use_linked_cells
 
 
     write(*,*) "!-------------------------------------------------------!"
@@ -484,23 +486,34 @@ subroutine lattice_calculations
 
     icount = 0
 
-    use_overlap_prefilter = fcell%orthoflag .and. (natoms >= 2000)
+    use_linked_cells = fcell%orthoflag .and. (natoms >= 2000)
 
-    if (use_overlap_prefilter) then
+    if (use_linked_cells) then
         overlap_rmax = 0.5d0*sqrt(maxval(asigma2))
         if (overlap_rmax <= 0.0d0) overlap_rmax = cube_size
+        overlap_rmax2 = overlap_rmax*overlap_rmax
 
-        nbinx = max(1, int(fcell%eff(1)/overlap_rmax))
-        nbiny = max(1, int(fcell%eff(2)/overlap_rmax))
-        nbinz = max(1, int(fcell%eff(3)/overlap_rmax))
+        cell_rmax = max(overlap_rmax, hicut)
+        if (cell_rmax <= 0.0d0) cell_rmax = cube_size
+
+        nbinx = max(1, int(fcell%eff(1)/cell_rmax))
+        nbiny = max(1, int(fcell%eff(2)/cell_rmax))
+        nbinz = max(1, int(fcell%eff(3)/cell_rmax))
 
         binx = fcell%eff(1)/dble(nbinx)
         biny = fcell%eff(2)/dble(nbiny)
         binz = fcell%eff(3)/dble(nbinz)
 
-        halo_x = max(1, ceiling(overlap_rmax/binx))
-        halo_y = max(1, ceiling(overlap_rmax/biny))
-        halo_z = max(1, ceiling(overlap_rmax/binz))
+        min_bin = min(binx, min(biny, binz))
+
+        xoff_min = -nbinx/2
+        xoff_max = (nbinx-1)/2
+        yoff_min = -nbiny/2
+        yoff_max = (nbiny-1)/2
+        zoff_min = -nbinz/2
+        zoff_max = (nbinz-1)/2
+        max_shell = max(max(abs(xoff_min), abs(xoff_max)), &
+                    max(max(abs(yoff_min), abs(yoff_max)), max(abs(zoff_min), abs(zoff_max))))
 
         allocate(head(nbinx, nbiny, nbinz), next_atom(natoms))
         head = 0
@@ -524,7 +537,9 @@ subroutine lattice_calculations
     end if
 
 !$omp parallel do default(shared) &
-!$omp private(j,k,l,icount,atvec1,overlap,amin,rdist2_ref,rdist_surface_ref,i,sepvec,rdist2,rdist_surface,sig2_rdist2,rdist6,rdist12,lj_energy,cx,cy,cz,cxi,cyi,czi,ii,ibx,iby,ibz) &
+!$omp private(j,k,l,icount,atvec1,overlap,amin,rdist2_ref,rdist_surface_ref,i,sepvec,rdist2) &
+!$omp private(rdist_surface,sig2_rdist2,rdist6,rdist12,lj_energy,cx,cy,cz,cxi,cyi,czi) &
+!$omp private(ii,ibx,iby,ibz,shell,cell_min2,search_bound2,shell_min2) &
 !$omp schedule(dynamic,10)
     do l=1, ncubesz                                    ! we go cubelet by cubelet
         do k=1, ncubesy
@@ -543,7 +558,7 @@ subroutine lattice_calculations
                 rdist2_ref = huge(0.0d0)
                 rdist_surface_ref = huge(0.0d0)
 
-                if (use_overlap_prefilter) then
+                if (use_linked_cells) then
                     cx = int(atvec1%comp(1)/binx) + 1
                     cy = int(atvec1%comp(2)/biny) + 1
                     cz = int(atvec1%comp(3)/binz) + 1
@@ -555,20 +570,60 @@ subroutine lattice_calculations
                     if(cy<1) cy = 1
                     if(cz<1) cz = 1
 
-                    do czi = -halo_z, halo_z
-                        do cyi = -halo_y, halo_y
-                            do cxi = -halo_x, halo_x
-                                ibx = modulo(cx + cxi - 1, nbinx) + 1
-                                iby = modulo(cy + cyi - 1, nbiny) + 1
-                                ibz = modulo(cz + czi - 1, nbinz) + 1
-                                i = head(ibx, iby, ibz)
-                                do while(i > 0)
-                                    call fundcell_snglMinImage(fcell,atvec1,matvec(i),sepvec,rdist2)
-                                    if(rdist2<0.25*asigma2(atype(i))) then
-                                        overlap=.True.
-                                        exit
-                                    end if
-                                    i = next_atom(i)
+                    do shell = 0, max_shell
+                        search_bound2 = max(rdist2_ref, max(hicut2, overlap_rmax2))
+                        if(shell > 1) then
+                            shell_min2 = (dble(shell-1)*min_bin)**2
+                            if(shell_min2 > search_bound2) exit
+                        end if
+
+                        do czi = zoff_min, zoff_max
+                            if(abs(czi) > shell) cycle
+                            do cyi = yoff_min, yoff_max
+                                if(max(abs(cyi), abs(czi)) > shell) cycle
+                                do cxi = xoff_min, xoff_max
+                                    if(max(abs(cxi), max(abs(cyi), abs(czi))) /= shell) cycle
+
+                                    ibx = modulo(cx + cxi - 1, nbinx) + 1
+                                    iby = modulo(cy + cyi - 1, nbiny) + 1
+                                    ibz = modulo(cz + czi - 1, nbinz) + 1
+
+                                    cell_min2 = periodic_bin_dist2(atvec1, ibx, iby, ibz, binx, biny, binz)
+                                    search_bound2 = max(rdist2_ref, max(hicut2, overlap_rmax2))
+                                    if(cell_min2 > search_bound2) cycle
+
+                                    i = head(ibx, iby, ibz)
+                                    do while(i > 0)
+                                        call fundcell_snglMinImage(fcell,atvec1,matvec(i),sepvec,rdist2)
+
+                                        ! First check if the point is "inside" a sphere
+                                        if(rdist2<0.25*asigma2(atype(i))) then
+                                            overlap=.True.
+                                            exit
+                                        end if
+
+                                        if(rdist2<rdist2_ref) then
+                                            rdist2_ref = rdist2
+                                            amin = i
+                                        end if
+
+                                        rdist_surface = sqrt(rdist2)- 0.5*asigma(atype(i))
+
+                                        if(rdist_surface<rdist_surface_ref) then
+                                            rdist_surface_ref = rdist_surface
+                                        end if
+
+                                        if(rdist2<hicut2) then
+                                            sig2_rdist2 = asigma2_he(atype(i))/rdist2
+                                            rdist6 = sig2_rdist2*sig2_rdist2*sig2_rdist2
+                                            rdist12 = rdist6*rdist6
+                                            lj_energy  = aeps_he(atype(i))*(rdist12-rdist6)
+                                            lattice_lj_he(icount) = lattice_lj_he(icount) + lj_energy
+                                        end if
+
+                                        i = next_atom(i)
+                                    end do
+                                    if(overlap) exit
                                 end do
                                 if(overlap) exit
                             end do
@@ -576,38 +631,37 @@ subroutine lattice_calculations
                         end do
                         if(overlap) exit
                     end do
-                    if(overlap) cycle
+                else
+                    do i=1, natoms                                     ! for each cubelet go through the whole set of atoms of the adsorbent structure
+
+                        call fundcell_snglMinImage(fcell,atvec1,matvec(i),sepvec,rdist2)     ! calculate the distance between each atom and center of cubelet icount
+
+                        ! First check if the point is "inside" a sphere
+                        if(rdist2<0.25*asigma2(atype(i))) then             ! ignore the cubelet icount if it is "inside" an atom
+                            overlap=.True.
+                            exit
+                        end if
+
+                        if(rdist2<rdist2_ref) then                         ! in the next few lines we identify if the returned distance squared rdist2 is the smallest so far between
+                            rdist2_ref = rdist2                            ! cubelet icount and an atom of the structure, without an overlap
+                            amin = i
+                        end if
+
+                        rdist_surface = sqrt(rdist2)- 0.5*asigma(atype(i))
+
+                        if(rdist_surface<rdist_surface_ref) then
+                            rdist_surface_ref = rdist_surface
+                        end if
+
+                        if(rdist2<hicut2) then                            ! ignore the atom i if it is beyond the cutoff radius
+                            sig2_rdist2 = asigma2_he(atype(i))/rdist2         ! if an atom is within the cut-off, this is a convinient place to calculate its Lennard-Jones interaction
+                            rdist6 = sig2_rdist2*sig2_rdist2*sig2_rdist2                         ! with a helium atom placed in the center of the cubelet icount for later use in the helium volume calculation
+                            rdist12 = rdist6*rdist6                           ! based in the second virial approach
+                            lj_energy  = aeps_he(atype(i))*(rdist12-rdist6)
+                            lattice_lj_he(icount) = lattice_lj_he(icount) + lj_energy
+                        end if
+                    end do
                 end if
-
-                do i=1, natoms                                     ! for each cubelet go through the whole set of atoms of the adsorbent structure
-
-                    call fundcell_snglMinImage(fcell,atvec1,matvec(i),sepvec,rdist2)     ! calculate the distance between each atom and center of cubelet icount
-
-                    ! First check if the point is "inside" a sphere
-                    if(rdist2<0.25*asigma2(atype(i))) then             ! ignore the cubelet icount if it is "inside" an atom
-                        overlap=.True.
-                        exit
-                    end if
-
-                    if(rdist2<rdist2_ref) then                         ! in the next few lines we identify if the returned distance squared rdist2 is the smallest so far between
-                        rdist2_ref = rdist2                            ! cubelet icount and an atom of the structure, without an overlap
-                        amin = i
-                    end if
-
-                    rdist_surface = sqrt(rdist2)- 0.5*asigma(atype(i))
-
-                    if(rdist_surface<rdist_surface_ref) then
-                        rdist_surface_ref = rdist_surface
-                    end if
-
-                    if(rdist2<hicut2) then                            ! ignore the atom i if it is beyond the cutoff radius
-                        sig2_rdist2 = asigma2_he(atype(i))/rdist2         ! if an atom is within the cut-off, this is a convinient place to calculate its Lennard-Jones interaction
-                        rdist6 = sig2_rdist2*sig2_rdist2*sig2_rdist2                         ! with a helium atom placed in the center of the cubelet icount for later use in the helium volume calculation
-                        rdist12 = rdist6*rdist6                           ! based in the second virial approach
-                        lj_energy  = aeps_he(atype(i))*(rdist12-rdist6)
-                        lattice_lj_he(icount) = lattice_lj_he(icount) + lj_energy
-                    end if
-                end do
 
                 if(overlap.eqv..True.) then                          ! if in the previous cycle an overlap was detected, this whole cubelet is ignored
                     cycle
@@ -630,7 +684,7 @@ subroutine lattice_calculations
     end do
 !$omp end parallel do
 
-    if (use_overlap_prefilter) then
+    if (use_linked_cells) then
         deallocate(head, next_atom)
     end if
 
@@ -667,6 +721,33 @@ subroutine lattice_calculations
     write(*,*)
 
     return
+
+contains
+
+    real*8 function periodic_axis_bin_dist(q, lo, hi, box)
+        real*8, intent(in) :: q, lo, hi, box
+        real*8             :: d
+
+        if(q >= lo .and. q <= hi) then
+            periodic_axis_bin_dist = 0.0d0
+        else
+            d = min(abs(q-lo), abs(q-hi))
+            periodic_axis_bin_dist = min(d, box-d)
+        end if
+    end function periodic_axis_bin_dist
+
+    real*8 function periodic_bin_dist2(point, ix, iy, iz, dx, dy, dz)
+        type(vectype), intent(in) :: point
+        integer, intent(in)       :: ix, iy, iz
+        real*8, intent(in)        :: dx, dy, dz
+        real*8                    :: xdist, ydist, zdist
+
+        xdist = periodic_axis_bin_dist(point%comp(1), dble(ix-1)*dx, dble(ix)*dx, fcell%eff(1))
+        ydist = periodic_axis_bin_dist(point%comp(2), dble(iy-1)*dy, dble(iy)*dy, fcell%eff(2))
+        zdist = periodic_axis_bin_dist(point%comp(3), dble(iz-1)*dz, dble(iz)*dz, fcell%eff(3))
+
+        periodic_bin_dist2 = xdist*xdist + ydist*ydist + zdist*zdist
+    end function periodic_bin_dist2
 
 end subroutine lattice_calculations
 !--------------------------------------------------------------------------------------
