@@ -17,13 +17,14 @@
 Module random
 
   Use defaults, Only: RDbl, IDbl, Pi, lstrlen
+  use, intrinsic :: iso_fortran_env, only: int64
 
   Implicit None
   Save
 
   Private
   Public :: random_init, rranf, random_gaussian, random_getiseed, & 
-            random_gettrial, random_getnewseed
+            random_gettrial, random_getnewseed, random_indexed
 
   !** Initialized to a negative value
   Integer       ::  iseed =-1
@@ -215,6 +216,35 @@ Contains
       step = 1
     End If
   End Function random_gaussian
+
+  !-----------------------------------------------------------------
+  ! Stateless deterministic uniform random number in [0,1).
+  ! This is safe for OpenMP regions because it does not use shared
+  ! mutable state. Inputs can be loop indices and a base seed.
+  !-----------------------------------------------------------------
+  Real(kind=RDbl) Function random_indexed(seed, idx1, idx2, stream)
+    Integer, Intent(In) :: seed, idx1, idx2, stream
+    Integer(int64)      :: z
+    Integer(int64), Parameter :: m1 = int(Z'9E3779B97F4A7C15', int64)
+    Integer(int64), Parameter :: m2 = int(Z'BF58476D1CE4E5B9', int64)
+    Integer(int64), Parameter :: m3 = int(Z'94D049BB133111EB', int64)
+    Integer(int64), Parameter :: posmask = int(Z'7FFFFFFFFFFFFFFF', int64)
+    Real(kind=RDbl), Parameter :: inv53 = 1.1102230246251565D-16
+
+    z = int(abs(seed), int64)
+    z = z + m1*int(idx1 + 1, int64)
+    z = z + m2*int(idx2 + 1, int64)
+    z = z + m3*int(stream + 1, int64)
+
+    z = ieor(z, ishft(z, -30))
+    z = z*m2
+    z = ieor(z, ishft(z, -27))
+    z = z*m3
+    z = ieor(z, ishft(z, -31))
+    z = iand(z, posmask)
+
+    random_indexed = dble(ishft(z, -11))*inv53
+  End Function random_indexed
 
   !------------------------------------------------
   ! Returns the iseed

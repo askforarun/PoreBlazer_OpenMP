@@ -468,8 +468,13 @@ subroutine lattice_calculations
     type(vectype)                      :: atvec1, atvec2, sepvec
     real*8                             :: rdist, rdist2, rdist6, rdist12, rdist2_ref, rdist_surface, rdist_surface_ref
     real*8                             :: sigma, sigma6, sigma12,  sig2_rdist2, lj_energy
+    real*8                             :: overlap_rmax, binx, biny, binz
     integer*4                          :: i, j, k, l, icount, nstep,amin
+    integer                            :: nbinx, nbiny, nbinz, halo_x, halo_y, halo_z
+    integer                            :: cx, cy, cz, cxi, cyi, czi, ii, ibx, iby, ibz
+    integer, allocatable               :: head(:,:,:), next_atom(:)
     logical                            :: overlap
+    logical                            :: use_overlap_prefilter
 
 
     write(*,*) "!-------------------------------------------------------!"
@@ -479,8 +484,47 @@ subroutine lattice_calculations
 
     icount = 0
 
+    use_overlap_prefilter = fcell%orthoflag .and. (natoms >= 2000)
+
+    if (use_overlap_prefilter) then
+        overlap_rmax = 0.5d0*sqrt(maxval(asigma2))
+        if (overlap_rmax <= 0.0d0) overlap_rmax = cube_size
+
+        nbinx = max(1, int(fcell%eff(1)/overlap_rmax))
+        nbiny = max(1, int(fcell%eff(2)/overlap_rmax))
+        nbinz = max(1, int(fcell%eff(3)/overlap_rmax))
+
+        binx = fcell%eff(1)/dble(nbinx)
+        biny = fcell%eff(2)/dble(nbiny)
+        binz = fcell%eff(3)/dble(nbinz)
+
+        halo_x = max(1, ceiling(overlap_rmax/binx))
+        halo_y = max(1, ceiling(overlap_rmax/biny))
+        halo_z = max(1, ceiling(overlap_rmax/binz))
+
+        allocate(head(nbinx, nbiny, nbinz), next_atom(natoms))
+        head = 0
+        next_atom = 0
+
+        do ii=1, natoms
+            cx = int(matvec(ii)%comp(1)/binx) + 1
+            cy = int(matvec(ii)%comp(2)/biny) + 1
+            cz = int(matvec(ii)%comp(3)/binz) + 1
+
+            if(cx>nbinx) cx = nbinx
+            if(cy>nbiny) cy = nbiny
+            if(cz>nbinz) cz = nbinz
+            if(cx<1) cx = 1
+            if(cy<1) cy = 1
+            if(cz<1) cz = 1
+
+            next_atom(ii) = head(cx, cy, cz)
+            head(cx, cy, cz) = ii
+        end do
+    end if
+
 !$omp parallel do default(shared) &
-!$omp private(j,k,l,icount,atvec1,overlap,amin,rdist2_ref,rdist_surface_ref,i,sepvec,rdist2,rdist_surface,sig2_rdist2,rdist6,rdist12,lj_energy) &
+!$omp private(j,k,l,icount,atvec1,overlap,amin,rdist2_ref,rdist_surface_ref,i,sepvec,rdist2,rdist_surface,sig2_rdist2,rdist6,rdist12,lj_energy,cx,cy,cz,cxi,cyi,czi,ii,ibx,iby,ibz) &
 !$omp schedule(dynamic,10)
     do l=1, ncubesz                                    ! we go cubelet by cubelet
         do k=1, ncubesy
@@ -498,6 +542,42 @@ subroutine lattice_calculations
                 amin = 1
                 rdist2_ref = huge(0.0d0)
                 rdist_surface_ref = huge(0.0d0)
+
+                if (use_overlap_prefilter) then
+                    cx = int(atvec1%comp(1)/binx) + 1
+                    cy = int(atvec1%comp(2)/biny) + 1
+                    cz = int(atvec1%comp(3)/binz) + 1
+
+                    if(cx>nbinx) cx = nbinx
+                    if(cy>nbiny) cy = nbiny
+                    if(cz>nbinz) cz = nbinz
+                    if(cx<1) cx = 1
+                    if(cy<1) cy = 1
+                    if(cz<1) cz = 1
+
+                    do czi = -halo_z, halo_z
+                        do cyi = -halo_y, halo_y
+                            do cxi = -halo_x, halo_x
+                                ibx = modulo(cx + cxi - 1, nbinx) + 1
+                                iby = modulo(cy + cyi - 1, nbiny) + 1
+                                ibz = modulo(cz + czi - 1, nbinz) + 1
+                                i = head(ibx, iby, ibz)
+                                do while(i > 0)
+                                    call fundcell_snglMinImage(fcell,atvec1,matvec(i),sepvec,rdist2)
+                                    if(rdist2<0.25*asigma2(atype(i))) then
+                                        overlap=.True.
+                                        exit
+                                    end if
+                                    i = next_atom(i)
+                                end do
+                                if(overlap) exit
+                            end do
+                            if(overlap) exit
+                        end do
+                        if(overlap) exit
+                    end do
+                    if(overlap) cycle
+                end if
 
                 do i=1, natoms                                     ! for each cubelet go through the whole set of atoms of the adsorbent structure
 
@@ -534,33 +614,49 @@ subroutine lattice_calculations
                 end if
 
                 lattice_space(j,k,l) = 1                          ! otherwise we add it to the list of geometrically accessible cubelets lattice_space(j,k,l) = 1
-!$omp critical
-                ng_cubes = ng_cubes + 1
-                g_cubes(ng_cubes) = icount
-!$omp end critical
 
                 lattice_rdist2(j,k,l) = rdist_surface_ref*rdist_surface_ref ! lattice_rdist2(j,k,l) stores the shortest squared distance between cubelet j, k, l and nearest atom (without overlap)
 
                 if(rdist2_ref>0.25*asigma2_he(atype(amin))) then  ! next few lines detect if the cubelet is accessible to helium atom and update the list of
                     lattice_space_he(j,k,l) = 1                   ! helium accessible cubelets lattice_space_He(j,k,l)
-!$omp critical
-                    nhe_cubes = nhe_cubes + 1
-                    he_cubes(nhe_cubes) = icount
-!$omp end critical
                 end if
 
                 if(rdist2_ref>asigma2_n(atype(amin))) then        ! next few lines detect if the cubelet is accessible to nitrogen atom and update the list of
                     lattice_space_n(j,k,l) = 1                    ! nitrogen accessible cubelets lattice_space_N(j,k,l)
-!$omp critical
-                    nn_cubes = nn_cubes + 1
-                    n_cubes(nn_cubes) = icount
-!$omp end critical
                 end if
 
             end do
         end do
     end do
 !$omp end parallel do
+
+    if (use_overlap_prefilter) then
+        deallocate(head, next_atom)
+    end if
+
+    ! Build cube lists in deterministic order for reproducibility.
+    ng_cubes = 0
+    nhe_cubes = 0
+    nn_cubes = 0
+    do l=1, ncubesz
+        do k=1, ncubesy
+            do j=1, ncubesx
+                icount = ((l-1) * ncubesx * ncubesy) + ((k-1) * ncubesx) + j
+                if (lattice_space(j,k,l) > 0) then
+                    ng_cubes = ng_cubes + 1
+                    g_cubes(ng_cubes) = icount
+                end if
+                if (lattice_space_he(j,k,l) > 0) then
+                    nhe_cubes = nhe_cubes + 1
+                    he_cubes(nhe_cubes) = icount
+                end if
+                if (lattice_space_n(j,k,l) > 0) then
+                    nn_cubes = nn_cubes + 1
+                    n_cubes(nn_cubes) = icount
+                end if
+            end do
+        end do
+    end do
 
     allocate(PA1(ng_cubes), PA2(ng_cubes), PA3(ng_cubes), PA4(ng_cubes))
     PA1=0.0; PA2=0; PA3=0; PA4=0
@@ -760,14 +856,18 @@ subroutine surface_area
     use defaults, only:   rdbl, pi
     use fundcell, only:   fundamental_cell, fundcell_snglminimage, fundcell_getvolume, fundcell_maptocell, fundcell_slant
     use vector, only:     vectype
-    Use random, only:     rranf
+    Use random, only:     random_indexed
     use results
 
     implicit none
     real*8                                :: phi, costheta, theta
     !real*8                                :: stotal, volume  ! Moved these variables to the results module.
     real*8                                :: sjreal, sfrac, stotalreduced, rdist2
+    real*8                                :: rsearch, binx, biny, binz
     integer                               :: nx, ny, nz, ncount, i, j, k, nx_temp, ny_temp, nz_temp
+    integer                               :: nbinx, nbiny, nbinz, halo_x, halo_y, halo_z
+    integer                               :: cx, cy, cz, cxi, cyi, czi, ii
+    integer, allocatable                  :: head(:,:,:), next_atom(:)
     type(VecType)                         :: atvec1, atvec2, sepvec, atvec_temp
     logical                               :: deny
 
@@ -803,9 +903,46 @@ subroutine surface_area
 
     stotal = 0.0      ! initialize cumulative accessible surface area
 
+    ! Build a cell-linked list of framework atoms to avoid O(natoms) overlap
+    ! checks for every sampled point.
+    rsearch = coeff_surface*maxval(asigma_n)
+    if (rsearch <= 0.0d0) rsearch = cube_size
+
+    nbinx = max(1, int(fcell%eff(1)/rsearch))
+    nbiny = max(1, int(fcell%eff(2)/rsearch))
+    nbinz = max(1, int(fcell%eff(3)/rsearch))
+
+    binx = fcell%eff(1)/dble(nbinx)
+    biny = fcell%eff(2)/dble(nbiny)
+    binz = fcell%eff(3)/dble(nbinz)
+
+    halo_x = max(1, ceiling(rsearch/binx))
+    halo_y = max(1, ceiling(rsearch/biny))
+    halo_z = max(1, ceiling(rsearch/binz))
+
+    allocate(head(nbinx, nbiny, nbinz), next_atom(natoms))
+    head = 0
+    next_atom = 0
+
+    do ii=1, natoms
+        cx = int(matvec(ii)%comp(1)/binx) + 1
+        cy = int(matvec(ii)%comp(2)/biny) + 1
+        cz = int(matvec(ii)%comp(3)/binz) + 1
+
+        if(cx>nbinx) cx = nbinx
+        if(cy>nbiny) cy = nbiny
+        if(cz>nbinz) cz = nbinz
+        if(cx<1) cx = 1
+        if(cy<1) cy = 1
+        if(cz<1) cz = 1
+
+        next_atom(ii) = head(cx, cy, cz)
+        head(cx, cy, cz) = ii
+    end do
+
 !$omp parallel do default(shared) &
-!$omp private(i,ncount,j,phi,costheta,theta,atvec1,atvec_temp,nx,ny,nz,deny,k,sepvec,rdist2,sfrac,sjreal) &
-!$omp reduction(+:stotal) schedule(dynamic)
+!$omp private(i,ncount,j,phi,costheta,theta,atvec1,atvec_temp,nx,ny,nz,deny,k,sepvec,rdist2,sfrac,sjreal,cx,cy,cz,cxi,cyi,czi) &
+!$omp reduction(+:stotal) schedule(static)
     do i=1, natoms    ! number of atoms in the structure
 
         ncount = 0
@@ -815,10 +952,10 @@ subroutine surface_area
             ! generate random vector of length 1
             ! first generate phi -pi pi
 
-            phi=pi - rranf()*2.0*pi
+            phi=pi - random_indexed(iseed, i, j, 1)*2.0*pi
 
             ! generate theta -pi:pi
-            costheta = 1 - rranf() * 2.0
+            costheta = 1 - random_indexed(iseed, i, j, 2) * 2.0
             theta = acos(costheta)
             atvec1%comp(1) = sin(theta) * cos(phi)
             atvec1%comp(2) = sin(theta) * sin(phi)
@@ -861,16 +998,40 @@ subroutine surface_area
 
             deny=.False.
 
-            do k=1, natoms
-                if(k==i) cycle
+            cx = int(atvec1%comp(1)/binx) + 1
+            cy = int(atvec1%comp(2)/biny) + 1
+            cz = int(atvec1%comp(3)/binz) + 1
 
-                !atvec2%comp = coords(:, k)
+            if(cx>nbinx) cx = nbinx
+            if(cy>nbiny) cy = nbiny
+            if(cz>nbinz) cz = nbinz
+            if(cx<1) cx = 1
+            if(cy<1) cy = 1
+            if(cz<1) cz = 1
 
-                Call fundcell_snglMinImage(fcell,atvec1,matvec(k),sepvec,rdist2)
-                if(rdist2<coeff_surface2*asigma2_n(atype(k))) then
-                    deny=.True.
-                    exit
-                end if
+            do czi = -halo_z, halo_z
+                do cyi = -halo_y, halo_y
+                    do cxi = -halo_x, halo_x
+                        nx = modulo(cx + cxi - 1, nbinx) + 1
+                        ny = modulo(cy + cyi - 1, nbiny) + 1
+                        nz = modulo(cz + czi - 1, nbinz) + 1
+
+                        k = head(nx, ny, nz)
+                        do while(k > 0)
+                            if(k /= i) then
+                                Call fundcell_snglMinImage(fcell,atvec1,matvec(k),sepvec,rdist2)
+                                if(rdist2<coeff_surface2*asigma2_n(atype(k))) then
+                                    deny=.True.
+                                    exit
+                                end if
+                            end if
+                            k = next_atom(k)
+                        end do
+                        if(deny) exit
+                    end do
+                    if(deny) exit
+                end do
+                if(deny) exit
             end do
             !----------------------
 
@@ -889,6 +1050,8 @@ subroutine surface_area
 
     end do
 !$omp end parallel do
+
+    deallocate(head, next_atom)
 
     ! converting stotal on Surface per Volume
 
@@ -1164,6 +1327,27 @@ subroutine limiting_diameter
 
     icount = 0
 
+    if (ng_cubes <= 0) then
+        pore_lim = 0.0d0
+        pore_max = 0.0d0
+        sys_perc = 0
+
+        write(*,'(a)') ' No geometric-accessible lattice points were found.'
+        write(*,'(a)') ' Pore limiting diameter in A: 0.00'
+        write(*,'(a)') ' Maximum pore diameter in A:  0.00'
+        write(*,*)
+        write(*,*) "!-------------------------------------------------------!"
+        write(*,*) "! Limiting pore diameter and maximum pore size          !"
+        write(*,*) "! analysis complete                                     !"
+        write(*,*) "!-------------------------------------------------------!"
+        write(*,*)
+
+        write(100,'(a,f12.2)') "PLD_A ", 0.0
+        write(100,'(a,f12.2)') "LCD_A ", 0.0
+        write(100, *) "D ", 0
+        return
+    end if
+
     do l=1, ncubesz
         do k=1, ncubesy
             do j=1, ncubesx
@@ -1345,6 +1529,7 @@ subroutine sort(n,arr,brr,crr,drr)
     integer i,ir,j,jstack,k,l,istack(NSTACK)
     real*8 a,temp
     integer b, c, d, tempi
+    if (n <= 1) return
     jstack=0
     l=1
     ir=n

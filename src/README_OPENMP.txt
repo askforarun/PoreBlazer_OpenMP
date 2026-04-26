@@ -99,7 +99,7 @@ Threads    Runtime    Speedup    Efficiency
   
 - surface_area: Parallelized loop over atoms
   - Reduction clause for accumulating surface area
-  - Each thread has independent random number stream
+  - Deterministic index-based random sampling (thread-safe and reproducible)
   
 - volumes: Parallelized loop over helium-accessible cubes
   - Reduction clause for Boltzmann factor summation
@@ -124,8 +124,8 @@ the stack size:
 6. VALIDATION
 ================================================
 
-The OpenMP version produces IDENTICAL results to the serial version
-(within numerical precision). To verify:
+The OpenMP version is designed to be reproducible across runs and
+thread counts for the same input. To verify:
 
 1. Run with 1 thread:
    export OMP_NUM_THREADS=1
@@ -139,7 +139,7 @@ The OpenMP version produces IDENTICAL results to the serial version
    diff output_serial.txt output_parallel.txt
    
 Results should be identical or differ only in the last decimal place
-due to floating-point rounding in different summation orders.
+due to floating-point summation order.
 
 ================================================
 7. TROUBLESHOOTING

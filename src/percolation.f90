@@ -27,10 +27,12 @@ Contains
         Integer, Dimension(:,:,:), allocatable                                       :: cluster
         Integer, Dimension(:), allocatable                                           :: cl
         Integer, Dimension(:), allocatable                                           :: trcl
-        Integer                                                                      :: nc
+        Integer                                                                      :: nc, max_clusters
 
         allocate(cluster(size(lattice_in, 1), size(lattice_in, 2), size(lattice_in, 3)))
-        allocate(cl(5000000),trcl(5000000))
+        max_clusters = count(lattice_in > 0)
+        if (max_clusters < 1) max_clusters = 1
+        allocate(cl(max_clusters),trcl(max_clusters))
         nc = 0
         cluster = 0
         cl = 0
@@ -53,10 +55,12 @@ Contains
         Integer, Dimension(:,:,:), allocatable                                         :: cluster
         Integer, Dimension(:), allocatable                                             :: cl,trcl
         Integer, Intent(InOut)                                                         :: spanning
-        Integer                                                                        :: nc
+        Integer                                                                        :: nc, max_clusters
 
         allocate(cluster(size(lattice_in, 1), size(lattice_in, 2), size(lattice_in, 3)))
-        allocate(cl(100000),trcl(100000))
+        max_clusters = count(lattice_in > 0)
+        if (max_clusters < 1) max_clusters = 1
+        allocate(cl(max_clusters),trcl(max_clusters))
         nc = 0
         cluster = 0
         cl = 0
@@ -87,7 +91,7 @@ Contains
         Real :: xr, yr, zr
         Integer, Dimension(:), allocatable                                             :: clink, trcl_temp
 
-        allocate(clink(1000000))
+        allocate(clink(size(trcl)))
         allocate(trcl_temp(size(trcl)))
         clink = 0; trcl_temp = 0
 
