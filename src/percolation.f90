@@ -48,13 +48,14 @@ Contains
 !!subroutine that initiates percolation analysis
 !-----------------------------------------------------------------------------------------------
 
-    Subroutine percolation_calc_simple(lattice_in, cl_summary, spanning)
+    Subroutine percolation_calc_simple(lattice_in, cl_summary, spanning, span_x, span_y, span_z)
 
         Integer*2, Dimension(:,:,:), Intent(InOut)                                       :: lattice_in
         Integer, Dimension(:,:), Intent(InOut)                                         :: cl_summary
         Integer, Dimension(:,:,:), allocatable                                         :: cluster
         Integer, Dimension(:), allocatable                                             :: cl,trcl
         Integer, Intent(InOut)                                                         :: spanning
+        Integer, Intent(Out), Optional                                                 :: span_x, span_y, span_z
         Integer                                                                        :: nc, max_clusters
 
         allocate(cluster(size(lattice_in, 1), size(lattice_in, 2), size(lattice_in, 3)))
@@ -66,9 +67,12 @@ Contains
         cl = 0
         trcl = 0
         spanning = 0
+        if (present(span_x)) span_x = 0
+        if (present(span_y)) span_y = 0
+        if (present(span_z)) span_z = 0
 
         Call clusteranalysis(lattice_in,cluster,cl,trcl,nc)
-        Call span_simple(lattice_in, cluster, cl, nc, cl_summary, spanning)
+        Call span_simple(lattice_in, cluster, cl, nc, cl_summary, spanning, span_x, span_y, span_z)
         deallocate(cluster, cl, trcl)
     End Subroutine percolation_calc_simple
 
@@ -505,7 +509,7 @@ Contains
 
 !Look at cluster information and find out if any one of the clusters has an available site in every x y or z-axis position.
 
-    subroutine span_simple(lattice_in, cluster, cl, nc, cl_summary, spanning)
+    subroutine span_simple(lattice_in, cluster, cl, nc, cl_summary, spanning, span_x_out, span_y_out, span_z_out)
 
         Integer*2, Dimension(:,:,:), Intent(InOut)  :: lattice_in
         Integer, Dimension(:,:,:), Intent(InOut)  :: cluster(:,:,:)
@@ -513,6 +517,7 @@ Contains
         Integer, Intent(In)                       :: nc
         Integer, Dimension(:,:), Intent(Out)      :: cl_summary
         Integer, Intent(InOut)                    :: spanning
+        Integer, Intent(Out), Optional            :: span_x_out, span_y_out, span_z_out
         Integer                                   :: x_span, y_span, z_span,potentialspan !x_span=0 if there is no spanning cluster
         Integer                                   :: n,i,j,k, LX, LY, LZ, ic
         Integer, Dimension(:), allocatable  :: x_array, y_array, z_array
@@ -525,6 +530,9 @@ Contains
         attempt = .False.
         ic = 0
         cl_summary = 0
+        if (present(span_x_out)) span_x_out = 0
+        if (present(span_y_out)) span_y_out = 0
+        if (present(span_z_out)) span_z_out = 0
 
         ! Search for cluster sizes that are greater than LX/LY/LZ (any cluster smaller than this, won't be a spanning cluster)
         do n=1, nc
@@ -637,6 +645,9 @@ Contains
                     cl_summary(1, 1)      = ic
                     cl_summary(ic+1, 1)   = potentialspan
                     cl_summary(ic+1, 2)   = spanning
+                    if (present(span_x_out)) span_x_out = x_span
+                    if (present(span_y_out)) span_y_out = y_span
+                    if (present(span_z_out)) span_z_out = z_span
 
                     deallocate(x_array, y_array, z_array)
                     return

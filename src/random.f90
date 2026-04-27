@@ -24,7 +24,7 @@ Module random
 
   Private
   Public :: random_init, rranf, random_gaussian, random_getiseed, & 
-            random_gettrial, random_getnewseed, random_indexed
+            random_gettrial, random_getnewseed, random_indexed, random_advance
 
   !** Initialized to a negative value
   Integer       ::  iseed =-1
@@ -245,6 +245,24 @@ Contains
 
     random_indexed = dble(ishft(z, -11))*inv53
   End Function random_indexed
+
+  !-----------------------------------------------------------------
+  ! Advance the stateful generator by count draws without using the
+  ! returned values. This is useful when another code path uses a
+  ! stateless generator but we still want downstream routines that
+  ! rely on rranf() to see the same RNG state.
+  !-----------------------------------------------------------------
+  Subroutine random_advance(count)
+    Integer(int64), Intent(In) :: count
+    Integer(int64)             :: i
+    Real(kind=RDbl)            :: throwaway
+
+    If (count <= 0_int64) Return
+
+    Do i = 1_int64, count
+      throwaway = rranf()
+    End Do
+  End Subroutine random_advance
 
   !------------------------------------------------
   ! Returns the iseed

@@ -1,0 +1,31 @@
+ hydrogel_n25_64.xyz
+V_A^3   720820.510
+M _g/mol   466800.000
+RHO_g/cm^3        1.075
+PLD_A         0.90
+LCD_A        10.12
+ D   1071109408
+ Total               
+S_AC_A^2      2599.17
+S_AC_m^2/cm^3        36.06
+S_AC_m^2/g        33.53
+ Total               
+V_He_A^3    49922.619
+V_He_cm^3/g        0.064
+V_G_A^3   221082.309
+V_G cm^3/g:        0.285
+V_PO A^3:    14790.406
+V_PO cm^3/g:        0.019
+FV_PO:      0.02052
+ Network-accessible  
+S_AC_A^2         0.00
+S_AC_m^2/cm^3         0.00
+S_AC_m^2/g         0.00
+ Network-accessible  
+V_He_A^3    49603.907
+V_He_cm^3/g        0.064
+V_G_A^3   201338.762
+V_G cm^3/g:        0.260
+V_PO A^3:        0.000
+V_PO cm^3/g:        0.000
+FV_PO:      0.00000

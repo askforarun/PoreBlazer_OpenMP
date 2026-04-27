@@ -1,0 +1,17 @@
+UFF.atoms
+2.58, 10.22, 298, 12.8
+3.314
+20
+1.0
+20.0, 1.0
+21908391
+0
+
+! Default forcefield: UFF
+! Helium atom sigma (A), helium atom epsilon (K), temperature (K), cutoff distance (A)
+! Nitrogen atom sigma (A)
+! Number of samples per atom for the surface area calculation
+! Lattice cube size (A)
+! Largest anticipated pore diameter (A), size of the PSD bin (A)
+! Random number seed
+! Visualization options: 1 - xyz, 2 - grd, 3 - both; 0 - none

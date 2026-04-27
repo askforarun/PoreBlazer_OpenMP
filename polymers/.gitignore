@@ -1,0 +1,7 @@
+**/slurm-*.out
+**/slurm-*.err
+**/new.xyz
+**/probe_occupiable_volume.xyz
+**/poreblazer_upstream.exe
+**/psd_plot.pdf
+**/psd_plot.svg

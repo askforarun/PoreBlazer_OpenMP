@@ -16,6 +16,7 @@ module parameters
         integer :: nsample                               ! number of tests for surface area
         integer :: iseed                                 ! random seed number
         integer :: vis_option                            ! visualization options
+        logical :: compute_surface_area                  ! if .false., skip surface area calculations
         character*20 :: property                         ! differentiates between total and accessible properties
 end module parameters
 
@@ -136,7 +137,11 @@ write(*,*)
 
 property = "Total "
 write(*,*) "Step 3/10"
-call surface_area                ! surface area
+if (compute_surface_area) then
+    call surface_area            ! surface area
+else
+    call surface_area_skipped
+end if
 write(*,*) "Step 4/10"
 call pore_distribution           ! geometric pore size distribution
 write(*,*) "Step 5/10"
@@ -160,10 +165,14 @@ call nitrogen_lattice            ! returns lattice accessible to nitrogen
 
 
 write(*,*) "Step 9/10"
-call surface_area                ! accessible surface area
+if (compute_surface_area) then
+    call surface_area            ! accessible surface area
+else
+    call surface_area_skipped
+end if
 write(*,*) "Step 10/10"
 call pore_distribution           ! accessible geometric pore size distribution
-write(*,*) "Step 11/10"
+write(*,*) "Step 10b/10"
 call volumes                     ! accessible volumes
 
 
@@ -206,7 +215,9 @@ subroutine initialize(filename)
     implicit none
     character(len=*), optional :: filename                                              ! input filename, defaults stdin
     integer*4                             :: i, j, k, l                                 ! cycle indicies
+    integer                               :: ios, defaults_line_no
     logical                               :: check                                      ! logical variable, required for input analysis
+    character(512)                        :: line
     character(256)                        :: filename1, filename2, filename3            ! data file names
     real*8                                :: sigma_he, eps_he, sigma_n                  ! sigma (A) and epsilon (K) of helium; sigma (A) of nitrogen atom
     type(vectype)                         ::  atvec1
@@ -234,11 +245,48 @@ subroutine initialize(filename)
 
     open(2, file=Trim(adjustl(filename2)), status='old')
     open(3, file=Trim(adjustl(filename3)), status='old')
+    defaults_line_no = 0
 
-    read(3,*) filename1  !  name of the atom types file
-    read(3,*) sigma_he, eps_he, temp, hicut 
-    read(3,*) sigma_n
-    read(3,*) nsample
+    call defaults_next_line(3, trim(adjustl(filename3)), line, defaults_line_no, .false., ios)
+    filename1 = trim(adjustl(line))
+    if (len_trim(filename1) == 0) then
+        call defaults_fail(trim(adjustl(filename3)), defaults_line_no, "atom types file", "must not be empty")
+    end if
+
+    call defaults_next_line(3, trim(adjustl(filename3)), line, defaults_line_no, .false., ios)
+    read(line,*,iostat=ios) sigma_he, eps_he, temp, hicut
+    if (ios /= 0) then
+        call defaults_fail(trim(adjustl(filename3)), defaults_line_no, "line 2", "expected: sigma_he, eps_he, temperature, cutoff")
+    end if
+    if (sigma_he <= 0.0d0) call defaults_fail(trim(adjustl(filename3)), defaults_line_no, "sigma_he", "must be > 0")
+    if (eps_he <= 0.0d0) call defaults_fail(trim(adjustl(filename3)), defaults_line_no, "eps_he", "must be > 0")
+    if (temp <= 0.0d0) call defaults_fail(trim(adjustl(filename3)), defaults_line_no, "temperature", "must be > 0")
+    if (hicut <= 0.0d0) call defaults_fail(trim(adjustl(filename3)), defaults_line_no, "cutoff distance", "must be > 0")
+
+    call defaults_next_line(3, trim(adjustl(filename3)), line, defaults_line_no, .false., ios)
+    read(line,*,iostat=ios) sigma_n
+    if (ios /= 0) then
+        call defaults_fail(trim(adjustl(filename3)), defaults_line_no, "sigma_n", "must be a single numeric value")
+    end if
+    if (sigma_n <= 0.0d0) call defaults_fail(trim(adjustl(filename3)), defaults_line_no, "sigma_n", "must be > 0")
+
+    call defaults_next_line(3, trim(adjustl(filename3)), line, defaults_line_no, .false., ios)
+    read(line,*,iostat=ios) nsample
+    if (ios /= 0) then
+        call defaults_fail(trim(adjustl(filename3)), defaults_line_no, "nsample", "must be an integer >= 0")
+    end if
+    if (nsample < 0) then
+        call defaults_fail(trim(adjustl(filename3)), defaults_line_no, "nsample", &
+            "must be >= 0; use 0 to skip surface area calculations")
+    end if
+    compute_surface_area = (nsample > 0)
+    if (nsample == 0) then
+        call defaults_warn(trim(adjustl(filename3)), defaults_line_no, "nsample", &
+            "surface area will be skipped and only PSD/free-volume quantities will be computed")
+    elseif (nsample > 5000) then
+        call defaults_warn(trim(adjustl(filename3)), defaults_line_no, "nsample", &
+            "very large value may make surface area calculations expensive")
+    end if
 
     open(1, file=Trim(adjustl(filename1)), status='old')
 
@@ -295,9 +343,20 @@ subroutine initialize(filename)
 
     ! Parameters of the simulations
 
-
-
-    read(3,*) cube_size            ! lattice cube_size size in A and number of rotations per molecule
+    call defaults_next_line(3, trim(adjustl(filename3)), line, defaults_line_no, .false., ios)
+    read(line,*,iostat=ios) cube_size            ! lattice cube_size size in A and number of rotations per molecule
+    if (ios /= 0) then
+        call defaults_fail(trim(adjustl(filename3)), defaults_line_no, "cube_size", "must be a single numeric value > 0")
+    end if
+    if (cube_size <= 0.0d0) call defaults_fail(trim(adjustl(filename3)), defaults_line_no, "cube_size", "must be > 0")
+    if (cube_size < 0.1d0) then
+        call defaults_warn(trim(adjustl(filename3)), defaults_line_no, "cube_size", &
+            "very fine lattice spacing may be expensive")
+    end if
+    if (natoms > 10000 .and. cube_size < 0.2d0) then
+        call defaults_warn(trim(adjustl(filename3)), defaults_line_no, "cube_size", &
+            "fine lattice spacing on a large system may lead to very long runtimes")
+    end if
 
     ! Parameters of the simulation box
 
@@ -382,13 +441,38 @@ subroutine initialize(filename)
     lattice_lj_he = 0.0d0
     cl_summary = 0
 
-    read(3,*) maxpore, binsize    ! information related to pore size distrubution
+    call defaults_next_line(3, trim(adjustl(filename3)), line, defaults_line_no, .false., ios)
+    read(line,*,iostat=ios) maxpore, binsize    ! information related to pore size distrubution
+    if (ios /= 0) then
+        call defaults_fail(trim(adjustl(filename3)), defaults_line_no, "maxpore,binsize", &
+            "expected two numeric values: largest pore diameter, PSD bin size")
+    end if
+    if (maxpore <= 0.0d0) call defaults_fail(trim(adjustl(filename3)), defaults_line_no, "maxpore", "must be > 0")
+    if (binsize <= 0.0d0) call defaults_fail(trim(adjustl(filename3)), defaults_line_no, "binsize", "must be > 0")
+    if (binsize > maxpore) call defaults_fail(trim(adjustl(filename3)), defaults_line_no, "binsize", "must be <= maxpore")
+    if (maxpore < 2.0d0*cube_size) then
+        call defaults_warn(trim(adjustl(filename3)), defaults_line_no, "maxpore", &
+            "is close to the lattice spacing and may be too small to resolve the PSD well")
+    end if
+    if (maxpore > min(fcell%eff(1), min(fcell%eff(2), fcell%eff(3)))) then
+        call defaults_warn(trim(adjustl(filename3)), defaults_line_no, "maxpore", &
+            "exceeds the shortest cell dimension and may be unnecessarily large")
+    elseif (maxpore > 50.0d0) then
+        call defaults_warn(trim(adjustl(filename3)), defaults_line_no, "maxpore", &
+            "is unusually large and may increase PSD work without improving results")
+    end if
     nbins = int(maxpore/binsize)
+    if (nbins < 1) call defaults_fail(trim(adjustl(filename3)), defaults_line_no, "maxpore,binsize", &
+        "must produce at least one PSD bin")
     binsize = maxpore/real(nbins)
 
     allocate(psd_cumul(nbins+100), psd(nbins+100))
 
-    read(3,*) iseed               ! random seed
+    call defaults_next_line(3, trim(adjustl(filename3)), line, defaults_line_no, .false., ios)
+    read(line,*,iostat=ios) iseed               ! random seed
+    if (ios /= 0) then
+        call defaults_fail(trim(adjustl(filename3)), defaults_line_no, "random seed", "must be an integer value")
+    end if
 
     if(iseed>0) then
         iseed = -iseed
@@ -397,7 +481,20 @@ subroutine initialize(filename)
     call random_init(iseed)
 
 
-    read(3,*) vis_option
+    call defaults_next_line(3, trim(adjustl(filename3)), line, defaults_line_no, .false., ios)
+    read(line,*,iostat=ios) vis_option
+    if (ios /= 0) then
+        call defaults_fail(trim(adjustl(filename3)), defaults_line_no, "visualization option", "must be an integer from 0 to 3")
+    end if
+    if (vis_option < 0 .or. vis_option > 3) then
+        call defaults_fail(trim(adjustl(filename3)), defaults_line_no, "visualization option", "must be 0, 1, 2, or 3")
+    end if
+
+    call defaults_next_line(3, trim(adjustl(filename3)), line, defaults_line_no, .true., ios)
+    if (ios == 0) then
+        call defaults_fail(trim(adjustl(filename3)), defaults_line_no, "extra setting", &
+            "unexpected extra line; use the original 8-line defaults.dat format only")
+    end if
 
     close(1)
     close(2)
@@ -409,10 +506,72 @@ subroutine initialize(filename)
     write(*,*) "! Initialization complete                               !"
     write(*,*) "!-------------------------------------------------------!"
     write(*,*)
+    if (.not. compute_surface_area) then
+        write(*,*) "Surface area calculations will be skipped because nsample = 0."
+        write(*,*) "Downstream RNG state will be preserved for PSD and volume reproducibility."
+        write(*,*)
+    end if
 
     return
 
 end subroutine initialize
+
+subroutine defaults_next_line(unitno, filename, line, line_no, allow_eof, ios)
+    implicit none
+    integer, intent(in)            :: unitno
+    character(len=*), intent(in)   :: filename
+    character(len=*), intent(out)  :: line
+    integer, intent(inout)         :: line_no
+    logical, intent(in)            :: allow_eof
+    integer, intent(out)           :: ios
+    character(512)                 :: raw
+    integer                        :: cut, cut_hash, cut_bang
+
+    line = ''
+
+    do
+        read(unitno,'(A)',iostat=ios) raw
+        if (ios /= 0) then
+            if (allow_eof) return
+            call defaults_fail(filename, line_no + 1, "defaults.dat", "unexpected end of file")
+        end if
+
+        line_no = line_no + 1
+        cut = len_trim(raw) + 1
+        cut_bang = index(raw, '!')
+        cut_hash = index(raw, '#')
+        if (cut_bang > 0 .and. cut_bang < cut) cut = cut_bang
+        if (cut_hash > 0 .and. cut_hash < cut) cut = cut_hash
+        if (cut > 1) then
+            line = adjustl(raw(:cut-1))
+        else
+            line = ''
+        end if
+
+        if (len_trim(line) == 0) cycle
+        ios = 0
+        return
+    end do
+end subroutine defaults_next_line
+
+subroutine defaults_fail(filename, line_no, field, message)
+    implicit none
+    character(len=*), intent(in) :: filename, field, message
+    integer, intent(in)          :: line_no
+
+    write(*,'(a)') "Error while reading "//trim(adjustl(filename))//":"
+    write(*,'(a,i0,a,a,a)') "  line ", line_no, " (", trim(adjustl(field)), "): "//trim(adjustl(message))
+    stop 1
+end subroutine defaults_fail
+
+subroutine defaults_warn(filename, line_no, field, message)
+    implicit none
+    character(len=*), intent(in) :: filename, field, message
+    integer, intent(in)          :: line_no
+
+    write(*,'(a)') "Warning while reading "//trim(adjustl(filename))//":"
+    write(*,'(a,i0,a,a,a)') "  line ", line_no, " (", trim(adjustl(field)), "): "//trim(adjustl(message))
+end subroutine defaults_warn
 
 !--------------------------------------------------------------------------------------
 ! Finalize: formally deallocate all arrays
@@ -726,14 +885,14 @@ contains
 
     real*8 function periodic_axis_bin_dist(q, lo, hi, box)
         real*8, intent(in) :: q, lo, hi, box
-        real*8             :: d
+        real*8             :: center, halfwidth, rel
 
-        if(q >= lo .and. q <= hi) then
-            periodic_axis_bin_dist = 0.0d0
-        else
-            d = min(abs(q-lo), abs(q-hi))
-            periodic_axis_bin_dist = min(d, box-d)
-        end if
+        center = 0.5d0*(lo + hi)
+        halfwidth = 0.5d0*(hi - lo)
+        rel = q - center
+        rel = rel - box*anint(rel/box)
+
+        periodic_axis_bin_dist = max(abs(rel) - halfwidth, 0.0d0)
     end function periodic_axis_bin_dist
 
     real*8 function periodic_bin_dist2(point, ix, iy, iz, dx, dy, dz)
@@ -927,6 +1086,44 @@ end subroutine volumes
 !       Subroutine for calculation of the accessible surface area
 !--------------------------------------------------------------------------------------
 
+subroutine surface_area_skipped
+
+    use parameters
+    use adsorbent
+    use, intrinsic :: iso_fortran_env, only: int64
+    use random, only: random_advance
+    use results
+
+    implicit none
+    integer(int64) :: surface_draws
+    real*8 :: stotalreduced
+
+    stotal = 0.0d0
+    stotalreduced = 0.0d0
+    surface_draws = 2_int64 * int(natoms, int64) * int(max(nsample, 0), int64)
+
+    call random_advance(surface_draws)
+
+    write(*,*) "!-------------------------------------------------------!"
+    write(*,*) "! Surface area calculations skipped                     !"
+    write(*,*) "!-------------------------------------------------------!"
+    write(*,*) "nsample = 0 in defaults.dat, so only pore-volume and PSD"
+    write(*,*) "calculations are performed for this phase."
+    write(*,*)
+
+    write(100,*) property
+    write(100,'(a,f12.2)') "S_AC_A^2 ", stotal
+    write(100,'(a,f12.2)') "S_AC_m^2/cm^3 ", stotalreduced
+    write(100,'(a,f12.2)') "S_AC_m^2/g ", stotalreduced
+
+    return
+
+end subroutine surface_area_skipped
+
+!--------------------------------------------------------------------------------------
+!       Subroutine for calculation of the accessible surface area
+!--------------------------------------------------------------------------------------
+
 subroutine surface_area
 
     use parameters
@@ -937,25 +1134,30 @@ subroutine surface_area
     use defaults, only:   rdbl, pi
     use fundcell, only:   fundamental_cell, fundcell_snglminimage, fundcell_getvolume, fundcell_maptocell, fundcell_slant
     use vector, only:     vectype
-    Use random, only:     random_indexed
+    Use random, only:     rranf
     use results
 
     implicit none
+    integer, parameter                    :: surface_block_atoms = 256
     real*8                                :: phi, costheta, theta
     !real*8                                :: stotal, volume  ! Moved these variables to the results module.
     real*8                                :: sjreal, sfrac, stotalreduced, rdist2
     real*8                                :: rsearch, binx, biny, binz
     integer                               :: nx, ny, nz, ncount, i, j, k, nx_temp, ny_temp, nz_temp
     integer                               :: nbinx, nbiny, nbinz, halo_x, halo_y, halo_z
-    integer                               :: cx, cy, cz, cxi, cyi, czi, ii
+    integer                               :: cx, cy, cz, cxi, cyi, czi, ii, ib
+    integer                               :: block_start, block_end, block_size, nblock_atoms
     integer, allocatable                  :: head(:,:,:), next_atom(:)
+    real*8, allocatable                   :: rand_phi(:,:), rand_costheta(:,:), atom_surface(:)
     type(VecType)                         :: atvec1, atvec2, sepvec, atvec_temp
-    logical                               :: deny
+    logical                               :: deny, use_surface_linked_cells
 
     write(*,*) "!-------------------------------------------------------!"
     write(*,*) "! Starting surface area calculations                    !"
     write(*,*) "!-------------------------------------------------------!"
     write(*,*)
+
+    use_surface_linked_cells = fcell%orthoflag
 
     if (nn_cubes == 0) then
         ! If there are no nitrogen-accessible points, the surface area is zero.
@@ -983,105 +1185,33 @@ subroutine surface_area
     end if
 
     stotal = 0.0      ! initialize cumulative accessible surface area
+    block_size = min(natoms, surface_block_atoms)
 
-    ! Build a cell-linked list of framework atoms to avoid O(natoms) overlap
-    ! checks for every sampled point.
-    rsearch = coeff_surface*maxval(asigma_n)
-    if (rsearch <= 0.0d0) rsearch = cube_size
+    if (use_surface_linked_cells) then
+        ! Use the linked-cell overlap search only for orthorhombic cells.
+        rsearch = coeff_surface*maxval(asigma_n)
+        if (rsearch <= 0.0d0) rsearch = cube_size
 
-    nbinx = max(1, int(fcell%eff(1)/rsearch))
-    nbiny = max(1, int(fcell%eff(2)/rsearch))
-    nbinz = max(1, int(fcell%eff(3)/rsearch))
+        nbinx = max(1, int(fcell%eff(1)/rsearch))
+        nbiny = max(1, int(fcell%eff(2)/rsearch))
+        nbinz = max(1, int(fcell%eff(3)/rsearch))
 
-    binx = fcell%eff(1)/dble(nbinx)
-    biny = fcell%eff(2)/dble(nbiny)
-    binz = fcell%eff(3)/dble(nbinz)
+        binx = fcell%eff(1)/dble(nbinx)
+        biny = fcell%eff(2)/dble(nbiny)
+        binz = fcell%eff(3)/dble(nbinz)
 
-    halo_x = max(1, ceiling(rsearch/binx))
-    halo_y = max(1, ceiling(rsearch/biny))
-    halo_z = max(1, ceiling(rsearch/binz))
+        halo_x = max(1, ceiling(rsearch/binx))
+        halo_y = max(1, ceiling(rsearch/biny))
+        halo_z = max(1, ceiling(rsearch/binz))
 
-    allocate(head(nbinx, nbiny, nbinz), next_atom(natoms))
-    head = 0
-    next_atom = 0
+        allocate(head(nbinx, nbiny, nbinz), next_atom(natoms))
+        head = 0
+        next_atom = 0
 
-    do ii=1, natoms
-        cx = int(matvec(ii)%comp(1)/binx) + 1
-        cy = int(matvec(ii)%comp(2)/biny) + 1
-        cz = int(matvec(ii)%comp(3)/binz) + 1
-
-        if(cx>nbinx) cx = nbinx
-        if(cy>nbiny) cy = nbiny
-        if(cz>nbinz) cz = nbinz
-        if(cx<1) cx = 1
-        if(cy<1) cy = 1
-        if(cz<1) cz = 1
-
-        next_atom(ii) = head(cx, cy, cz)
-        head(cx, cy, cz) = ii
-    end do
-
-!$omp parallel do default(shared) &
-!$omp private(i,ncount,j,phi,costheta,theta,atvec1,atvec_temp,nx,ny,nz,deny,k,sepvec,rdist2,sfrac,sjreal,cx,cy,cz,cxi,cyi,czi) &
-!$omp reduction(+:stotal) schedule(static)
-    do i=1, natoms    ! number of atoms in the structure
-
-        ncount = 0
-
-        do j=1, nsample   ! number of sample points for each atom
-
-            ! generate random vector of length 1
-            ! first generate phi -pi pi
-
-            phi=pi - random_indexed(iseed, i, j, 1)*2.0*pi
-
-            ! generate theta -pi:pi
-            costheta = 1 - random_indexed(iseed, i, j, 2) * 2.0
-            theta = acos(costheta)
-            atvec1%comp(1) = sin(theta) * cos(phi)
-            atvec1%comp(2) = sin(theta) * sin(phi)
-            atvec1%comp(3) = costheta
-
-            ! make this vector of (sigma+probe_diameter)/2.0 length
-
-            atvec1%comp = atvec1%comp * (coeff_surface * asigma_n(atype(i))) +  coords(:,i)
-
-            ! translate the center of the coordinate to the particle i center and apply PBC
-
-            ! apply PBCs to ensure that the selected point is within the simulation cell
-
-            atvec_temp = atvec1
-            
-            if(fcell%orthoflag.eqv..True.) then
-            atvec1 = fundcell_maptocell(fcell,atvec1)
-            else
-            atvec1 = fundcell_slant(fcell, atvec1)
-            end if
-
-            ! locate the cubelet in which the point sits
-
-            nx = int(atvec1%comp(1)/cube_size) + 1
-            ny = int(atvec1%comp(2)/cube_size) + 1
-            nz = int(atvec1%comp(3)/cube_size) + 1
-            
-            if(nx>ncubesx) nx = nx - (nx/ncubesx)*ncubesx
-            if(nx<1) nx = nx + (1-(nx/ncubesx))*ncubesx
-            if(ny>ncubesy) ny = ny - (ny/ncubesy)*ncubesy
-            if(ny<1) ny = ny +  (1-(ny/ncubesy))*ncubesy
-            if(nz>ncubesz) nz = nz - (nz/ncubesz)*ncubesz
-            if(nz<1) nz = nz +  (1-(nz/ncubesz))*ncubesz
-
-            if(lattice_space_n(nx,ny,nz)<1) cycle ! reject the point if it is within an atom
-
-            !----------------------
-            ! now we perform the overlap test, i.e. we ensure that the selected point is not inside
-            ! any other surf_coeff*(atom_diamter+probe_diameter)/2 distance in the system
-
-            deny=.False.
-
-            cx = int(atvec1%comp(1)/binx) + 1
-            cy = int(atvec1%comp(2)/biny) + 1
-            cz = int(atvec1%comp(3)/binz) + 1
+        do ii=1, natoms
+            cx = int(matvec(ii)%comp(1)/binx) + 1
+            cy = int(matvec(ii)%comp(2)/biny) + 1
+            cz = int(matvec(ii)%comp(3)/binz) + 1
 
             if(cx>nbinx) cx = nbinx
             if(cy>nbiny) cy = nbiny
@@ -1090,49 +1220,133 @@ subroutine surface_area
             if(cy<1) cy = 1
             if(cz<1) cz = 1
 
-            do czi = -halo_z, halo_z
-                do cyi = -halo_y, halo_y
-                    do cxi = -halo_x, halo_x
-                        nx = modulo(cx + cxi - 1, nbinx) + 1
-                        ny = modulo(cy + cyi - 1, nbiny) + 1
-                        nz = modulo(cz + czi - 1, nbinz) + 1
+            next_atom(ii) = head(cx, cy, cz)
+            head(cx, cy, cz) = ii
+        end do
+    end if
 
-                        k = head(nx, ny, nz)
-                        do while(k > 0)
-                            if(k /= i) then
-                                Call fundcell_snglMinImage(fcell,atvec1,matvec(k),sepvec,rdist2)
-                                if(rdist2<coeff_surface2*asigma2_n(atype(k))) then
-                                    deny=.True.
-                                    exit
-                                end if
-                            end if
-                            k = next_atom(k)
+    allocate(rand_phi(nsample, block_size), rand_costheta(nsample, block_size), atom_surface(block_size))
+
+    do block_start = 1, natoms, block_size
+        block_end = min(natoms, block_start + block_size - 1)
+        nblock_atoms = block_end - block_start + 1
+
+        do ib = 1, nblock_atoms
+            do j = 1, nsample
+                rand_phi(j, ib) = rranf()
+                rand_costheta(j, ib) = rranf()
+            end do
+        end do
+
+!$omp parallel do default(shared) &
+!$omp private(ib,i,ncount,j,phi,costheta,theta,atvec1,atvec_temp,nx,ny,nz,deny,k,sepvec,rdist2,sfrac,sjreal,cx,cy,cz,cxi,cyi,czi) &
+!$omp schedule(static)
+        do ib=1, nblock_atoms
+            i = block_start + ib - 1
+            ncount = 0
+
+            do j=1, nsample
+
+                phi=pi - rand_phi(j, ib)*2.0*pi
+                costheta = 1 - rand_costheta(j, ib) * 2.0
+                theta = acos(costheta)
+                atvec1%comp(1) = sin(theta) * cos(phi)
+                atvec1%comp(2) = sin(theta) * sin(phi)
+                atvec1%comp(3) = costheta
+
+                atvec1%comp = atvec1%comp * (coeff_surface * asigma_n(atype(i))) +  coords(:,i)
+
+                atvec_temp = atvec1
+                
+                if(fcell%orthoflag.eqv..True.) then
+                atvec1 = fundcell_maptocell(fcell,atvec1)
+                else
+                atvec1 = fundcell_slant(fcell, atvec1)
+                end if
+
+                nx = int(atvec1%comp(1)/cube_size) + 1
+                ny = int(atvec1%comp(2)/cube_size) + 1
+                nz = int(atvec1%comp(3)/cube_size) + 1
+                
+                if(nx>ncubesx) nx = nx - (nx/ncubesx)*ncubesx
+                if(nx<1) nx = nx + (1-(nx/ncubesx))*ncubesx
+                if(ny>ncubesy) ny = ny - (ny/ncubesy)*ncubesy
+                if(ny<1) ny = ny +  (1-(ny/ncubesy))*ncubesy
+                if(nz>ncubesz) nz = nz - (nz/ncubesz)*ncubesz
+                if(nz<1) nz = nz +  (1-(nz/ncubesz))*ncubesz
+
+                if(lattice_space_n(nx,ny,nz)<1) cycle
+
+                deny=.False.
+
+                if (use_surface_linked_cells) then
+                    cx = int(atvec1%comp(1)/binx) + 1
+                    cy = int(atvec1%comp(2)/biny) + 1
+                    cz = int(atvec1%comp(3)/binz) + 1
+
+                    if(cx>nbinx) cx = nbinx
+                    if(cy>nbiny) cy = nbiny
+                    if(cz>nbinz) cz = nbinz
+                    if(cx<1) cx = 1
+                    if(cy<1) cy = 1
+                    if(cz<1) cz = 1
+
+                    do czi = -halo_z, halo_z
+                        do cyi = -halo_y, halo_y
+                            do cxi = -halo_x, halo_x
+                                nx = modulo(cx + cxi - 1, nbinx) + 1
+                                ny = modulo(cy + cyi - 1, nbiny) + 1
+                                nz = modulo(cz + czi - 1, nbinz) + 1
+
+                                k = head(nx, ny, nz)
+                                do while(k > 0)
+                                    if(k /= i) then
+                                        Call fundcell_snglMinImage(fcell,atvec1,matvec(k),sepvec,rdist2)
+                                        if(rdist2<coeff_surface2*asigma2_n(atype(k))) then
+                                            deny=.True.
+                                            exit
+                                        end if
+                                    end if
+                                    k = next_atom(k)
+                                end do
+                                if(deny) exit
+                            end do
+                            if(deny) exit
                         end do
                         if(deny) exit
                     end do
-                    if(deny) exit
-                end do
-                if(deny) exit
+                else
+                    do k=1, natoms
+                        if(k==i) cycle
+
+                        Call fundcell_snglMinImage(fcell,atvec1,matvec(k),sepvec,rdist2)
+                        if(rdist2<coeff_surface2*asigma2_n(atype(k))) then
+                            deny=.True.
+                            exit
+                        end if
+                    end do
+                end if
+
+                if(deny) cycle
+                ncount=ncount+1
             end do
-            !----------------------
 
-
-            if(deny) cycle
-            ncount=ncount+1
+            sfrac=dble(ncount)/dble(nsample)
+            sjreal=4.0*pi*coeff_surface2*asigma2_n(atype(i))*sfrac
+            atom_surface(ib)=sjreal
         end do
-
-        ! fraction of the accessible surface area for sphere i
-        sfrac=dble(ncount)/dble(nsample)
-
-
-        ! surface area for sphere i in real units (A^2)
-        sjreal=4.0*pi*coeff_surface2*asigma2_n(atype(i))*sfrac
-        stotal=stotal+sjreal
-
-    end do
 !$omp end parallel do
 
-    deallocate(head, next_atom)
+        do ib=1, nblock_atoms
+            stotal = stotal + atom_surface(ib)
+        end do
+    end do
+
+    deallocate(rand_phi, rand_costheta, atom_surface)
+
+    if (use_surface_linked_cells) then
+        deallocate(head, next_atom)
+    end if
 
     ! converting stotal on Surface per Volume
 
@@ -1311,7 +1525,12 @@ subroutine pore_distribution
     write(13, *) '# '
     write(13, *) '# d(probe)                Volume Fraction'
 
-    psd_cumul=psd_cumul/psd_cumul(1)
+    if (psd_cumul(1) > 0.0) then
+        psd_cumul = psd_cumul/psd_cumul(1)
+    else
+        write(*,*) "Warning: PSD normalization skipped because the cumulative"
+        write(*,*) "distribution reference value is zero."
+    end if
 
     do i=1, nbins
         write(13,*) binsize*real(i-1)-binsize/2.0, psd_cumul(i)
@@ -1391,6 +1610,7 @@ subroutine limiting_diameter
     use parameters
     use atoms
     use lattice
+    use distributions, only: maxpore
 
     use percolation, only: percolation_calc_simple
     use results
@@ -1398,7 +1618,9 @@ subroutine limiting_diameter
     implicit none
     real*8  :: rhigh, rlow, rmiddle, rmax, rdiff, rdiff_old
     integer :: i, j, k, l, percolation_type
-    integer :: icount
+    integer :: icount, span_x, span_y, span_z
+    integer :: current_span_x, current_span_y, current_span_z
+    character(len=16) :: percolation_axes
 
     write(*,*) "!-------------------------------------------------------!"
     write(*,*) "! Starting limiting pore diameter and maximum pore size !"
@@ -1407,6 +1629,13 @@ subroutine limiting_diameter
     write(*,*)
 
     icount = 0
+    percolation_type = 0
+    span_x = 0
+    span_y = 0
+    span_z = 0
+    current_span_x = 0
+    current_span_y = 0
+    current_span_z = 0
 
     if (ng_cubes <= 0) then
         pore_lim = 0.0d0
@@ -1465,14 +1694,28 @@ subroutine limiting_diameter
             lattice_temp(PA2(j), PA3(j), PA4(j)) = 1
         end do
 
-        call percolation_calc_simple(lattice_temp, cl_summary, spanning)
+        call percolation_calc_simple(lattice_temp, cl_summary, spanning, &
+            current_span_x, current_span_y, current_span_z)
 
         if(spanning>0) then
-            rlow  = PA1(j-1)
+            if (j <= 1) then
+                rlow = PA1(1)
+            else
+                rlow = PA1(j-1)
+            end if
             percolation_type = spanning
+            span_x = current_span_x
+            span_y = current_span_y
+            span_z = current_span_z
             cycle
         else
-            rhigh = PA1(j+1)
+            if (j >= ng_cubes) then
+                rhigh = PA1(ng_cubes)
+            elseif (j < 1) then
+                rhigh = PA1(1)
+            else
+                rhigh = PA1(j+1)
+            end if
             cycle
         end if
 
@@ -1480,6 +1723,18 @@ subroutine limiting_diameter
 
     write(*,'(a,f12.2)') ' Pore limiting diameter in A: ', 2.0*sqrt(rhigh)
     write(*,'(a,f12.2)') ' Maximum pore diameter in A:  ', 2.0*sqrt(rmax)
+    if (2.0d0*sqrt(rmax) > 0.9d0*maxpore) then
+        write(*,'(a,f12.2,a,f12.2)') ' Warning: computed LCD ', 2.0d0*sqrt(rmax), &
+            ' A is close to the defaults.dat maxpore setting of ', maxpore
+        write(*,'(a)') ' Consider increasing the line-6 pore diameter upper bound if the PSD tail looks truncated.'
+    end if
+    percolation_axes = 'none'
+    if (percolation_type > 0) then
+        percolation_axes = ''
+        if (span_x == 1) percolation_axes = trim(percolation_axes)//'x '
+        if (span_y == 1) percolation_axes = trim(percolation_axes)//'y '
+        if (span_z == 1) percolation_axes = trim(percolation_axes)//'z '
+    end if
     if(percolation_type==1) then
         write(*, *) 'The system is percolated in ', percolation_type, ' dimension (channels)'
     elseif(percolation_type==2) then
@@ -1488,6 +1743,7 @@ subroutine limiting_diameter
         write(*, *) 'The system is percolated in ', percolation_type, ' dimensions (3D pores)'
     else
     end if
+    write(*,'(a,a)') ' Percolation axes: ', trim(adjustl(percolation_axes))
 
     ! Store the output in the results module.
     pore_lim = 2.0*sqrt(rhigh)
@@ -1504,6 +1760,7 @@ subroutine limiting_diameter
     write(100,'(a,f12.2)') "PLD_A ", 2.0*sqrt(rhigh)
     write(100,'(a,f12.2)') "LCD_A ", 2.0*sqrt(rmax)
     write(100, *) "D ", percolation_type
+    write(100,'(a,a)') "D_axes ", trim(adjustl(percolation_axes))
     return
 
 end subroutine limiting_diameter
@@ -1523,7 +1780,7 @@ subroutine nitrogen_lattice_vis(option)
     use defaults, only:     radTodeg
 
     implicit none
-    integer                            :: option
+    integer, intent(in)               :: option
     integer                            :: nx, ny, nz, nxlow, nxup, nylow, nyup, nzlow, nzup, i, j, k
     integer                            :: ncx, ncy, ncz
     real                               :: x, y, z, field
@@ -1603,9 +1860,10 @@ end subroutine nitrogen_lattice_vis
 !==============================================================
 
 subroutine sort(n,arr,brr,crr,drr)
-    integer n,m,nstack
-    real*8 arr(n)
-    integer brr(n),crr(n), drr(n)
+    integer, intent(in)    :: n
+    integer                :: m,nstack
+    real*8, intent(inout)  :: arr(n)
+    integer, intent(inout) :: brr(n),crr(n), drr(n)
     parameter (M=7,NSTACK=50)
     integer i,ir,j,jstack,k,l,istack(NSTACK)
     real*8 a,temp
