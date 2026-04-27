@@ -167,6 +167,68 @@ export OMP_NUM_THREADS=1
 
 This skips both surface-area phases while still running the lattice, PSD, and volume calculations.
 
+### Example case-study run
+
+From the repository root:
+
+```bash
+cd case_studies/HKUST1
+export OMP_NUM_THREADS=1
+../../src/poreblazer.exe < input.dat
+```
+
+### Example `sbatch` run
+
+For a threaded case-study run on a cluster:
+
+```bash
+sbatch --job-name=pb-hkust1 \
+  --time=02:00:00 \
+  --cpus-per-task=8 \
+  --chdir=/users/ass2009/sharedscratch/PoreBlazer-performance-optimizations/case_studies/HKUST1 \
+  --output=/users/ass2009/sharedscratch/PoreBlazer-performance-optimizations/case_studies/HKUST1/slurm-%j.out \
+  --error=/users/ass2009/sharedscratch/PoreBlazer-performance-optimizations/case_studies/HKUST1/slurm-%j.err \
+  --wrap="bash -lc 'export OMP_NUM_THREADS=8 OMP_PROC_BIND=close OMP_PLACES=cores; /users/ass2009/sharedscratch/PoreBlazer-performance-optimizations/src/poreblazer.exe < input.dat'"
+```
+
+### Example polymer `sbatch` runs
+
+Upstream serial:
+
+```bash
+sbatch --job-name=pb-polymer-upstream \
+  --time=24:00:00 \
+  --cpus-per-task=1 \
+  --chdir=/users/ass2009/sharedscratch/PoreBlazer-performance-optimizations/polymers/polymer_upstream \
+  --output=/users/ass2009/sharedscratch/PoreBlazer-performance-optimizations/polymers/polymer_upstream/slurm-%j.out \
+  --error=/users/ass2009/sharedscratch/PoreBlazer-performance-optimizations/polymers/polymer_upstream/slurm-%j.err \
+  --wrap="bash -lc 'export OMP_NUM_THREADS=1; /usr/bin/time -p -o time.txt ./poreblazer_upstream.exe < input.dat > run.out'"
+```
+
+Optimized serial with linked cells:
+
+```bash
+sbatch --job-name=pb-polymer-serial \
+  --time=24:00:00 \
+  --cpus-per-task=1 \
+  --chdir=/users/ass2009/sharedscratch/PoreBlazer-performance-optimizations/polymers/polymer_linkedcell \
+  --output=/users/ass2009/sharedscratch/PoreBlazer-performance-optimizations/polymers/polymer_linkedcell/slurm-%j.out \
+  --error=/users/ass2009/sharedscratch/PoreBlazer-performance-optimizations/polymers/polymer_linkedcell/slurm-%j.err \
+  --wrap="bash -lc 'export OMP_NUM_THREADS=1; /usr/bin/time -p -o time.txt /users/ass2009/sharedscratch/PoreBlazer-performance-optimizations/src/poreblazer.exe < input.dat > run.out'"
+```
+
+Optimized OpenMP with linked cells:
+
+```bash
+sbatch --job-name=pb-polymer-openmp \
+  --time=24:00:00 \
+  --cpus-per-task=8 \
+  --chdir=/users/ass2009/sharedscratch/PoreBlazer-performance-optimizations/polymers/polymer_openmp \
+  --output=/users/ass2009/sharedscratch/PoreBlazer-performance-optimizations/polymers/polymer_openmp/slurm-%j.out \
+  --error=/users/ass2009/sharedscratch/PoreBlazer-performance-optimizations/polymers/polymer_openmp/slurm-%j.err \
+  --wrap="bash -lc 'export OMP_NUM_THREADS=8 OMP_PROC_BIND=close OMP_PLACES=cores; /usr/bin/time -p -o time.txt /users/ass2009/sharedscratch/PoreBlazer-performance-optimizations/src/poreblazer.exe < input.dat > run.out'"
+```
+
 ## Input Files
 
 ### `input.dat`
@@ -374,31 +436,29 @@ Validation summary:
 
 Validation and timing table:
 
-| Case | Upstream serial (s) | Optimized serial (s) | Optimized OpenMP 8 threads (s) | Exact match |
-|---|---:|---:|---:|---|
-| BHP | 6.74 | 6.73 | 6.31 | Yes |
-| CD121 | 16.11 | 16.15 | 13.59 | Yes |
-| CLO | 129.99 | 58.73 | 42.05 | Yes |
-| HKUST1 | 74.63 | 73.98 | 56.97 | Yes |
-| IRMOF1 | 57.02 | 57.01 | 45.49 | Yes |
-| LOV | 2.63 | 2.62 | 0.83 | Yes |
-| MIL101 | 1513.96 | 385.76 | 321.11 | Yes |
-| MIL47V | 96.37 | 95.41 | 56.44 | Yes |
-| MOF180 | 555.51 | 556.27 | 315.85 | Yes |
-| ROG | 3.34 | 3.30 | 2.56 | Yes |
-| RON | 3.44 | 3.43 | 2.65 | Yes |
-| SLIT | 1.74 | 1.81 | 0.57 | Yes |
-| STO | 5.61 | 5.60 | 4.09 | Yes |
-| WEI | 0.26 | 0.23 | 0.07 | Yes |
-| ZIF8 | 206.37 | 184.12 | 83.10 | Yes |
+| Case | Atoms | Upstream serial (s) | Optimized serial (s) | Optimized OpenMP 8 threads (s) | Exact match |
+|---|---:|---:|---:|---:|---|
+| BHP | 84 | 6.74 | 6.73 | 6.31 | Yes |
+| CD121 | 208 | 16.11 | 16.15 | 13.59 | Yes |
+| CLO | 5136 | 129.99 | 58.73 | 42.05 | Yes |
+| HKUST1 | 624 | 74.63 | 73.98 | 56.97 | Yes |
+| IRMOF1 | 424 | 57.02 | 57.01 | 45.49 | Yes |
+| LOV | 972 | 2.63 | 2.62 | 0.83 | Yes |
+| MIL101 | 11768 | 1513.96 | 385.76 | 321.11 | Yes |
+| MIL47V | 1152 | 96.37 | 95.41 | 56.44 | Yes |
+| MOF180 | 926 | 555.51 | 556.27 | 315.85 | Yes |
+| ROG | 240 | 3.34 | 3.30 | 2.56 | Yes |
+| RON | 240 | 3.44 | 3.43 | 2.65 | Yes |
+| SLIT | 882 | 1.74 | 1.81 | 0.57 | Yes |
+| STO | 100 | 5.61 | 5.60 | 4.09 | Yes |
+| WEI | 68 | 0.26 | 0.23 | 0.07 | Yes |
+| ZIF8 | 2208 | 206.37 | 184.12 | 83.10 | Yes |
 
 These results were generated with the original upstream-style case-study inputs and `defaults.dat` files, with surface area calculation enabled throughout. The validation artifacts are stored under [validation/319416_20260426_213105](/users/ass2009/sharedscratch/PoreBlazer-performance-optimizations/validation/319416_20260426_213105), with the summary table in [openmp_validation.csv](/users/ass2009/sharedscratch/PoreBlazer-performance-optimizations/validation/319416_20260426_213105/openmp_validation.csv). Re-run `scripts/openmp_validation.sbatch` after code changes to regenerate the table.
 
 ### Polymers
 
-These bundled examples come from the original Lev Sarkisov PoreBlazer distribution and are used here as the primary upstream validation set.
-
-The repository also includes a large non-bundled polymer validation in:
+The repository also includes a separate non-bundled polymer validation, added in this optimized repository for a large polymer-like system with `79,650` atoms:
 
 - [polymers/polymer_upstream](/users/ass2009/sharedscratch/PoreBlazer-performance-optimizations/polymers/polymer_upstream)
 - [polymers/polymer_linkedcell](/users/ass2009/sharedscratch/PoreBlazer-performance-optimizations/polymers/polymer_linkedcell)
@@ -406,23 +466,27 @@ The repository also includes a large non-bundled polymer validation in:
 
 For this polymer case, the optimized serial and optimized OpenMP runs match exactly, and the upstream run matches all meaningful physical outputs with surface area calculation enabled:
 
-| Quantity | Upstream serial | Optimized serial | Optimized OpenMP |
-|---|---:|---:|---:|
-| `PLD_A` | 0.90 | 0.90 | 0.90 |
-| `LCD_A` | 10.12 | 10.12 | 10.12 |
-| `S_AC_A^2` | 2599.17 | 2599.17 | 2599.17 |
-| `S_AC_m^2/cm^3` | 36.06 | 36.06 | 36.06 |
-| `S_AC_m^2/g` | 33.53 | 33.53 | 33.53 |
-| `V_He_A^3` | 49922.619 | 49922.619 | 49922.619 |
-| `V_G_A^3` | 221082.309 | 221082.309 | 221082.309 |
-| `V_PO_A^3` | 14790.406 | 14790.406 | 14790.406 |
-| `FV_PO` | 0.02052 | 0.02052 | 0.02052 |
+| Quantity | Atoms | Upstream serial | Optimized serial | Optimized OpenMP |
+|---|---:|---:|---:|---:|
+| `PLD_A` | 79650 | 0.90 | 0.90 | 0.90 |
+| `LCD_A` | 79650 | 10.12 | 10.12 | 10.12 |
+| `S_AC_A^2` | 79650 | 2599.17 | 2599.17 | 2599.17 |
+| `S_AC_m^2/cm^3` | 79650 | 36.06 | 36.06 | 36.06 |
+| `S_AC_m^2/g` | 79650 | 33.53 | 33.53 | 33.53 |
+| `V_He_A^3` | 79650 | 49922.619 | 49922.619 | 49922.619 |
+| `V_G_A^3` | 79650 | 221082.309 | 221082.309 | 221082.309 |
+| `V_PO_A^3` | 79650 | 14790.406 | 14790.406 | 14790.406 |
+| `FV_PO` | 79650 | 0.02052 | 0.02052 | 0.02052 |
+
+Polymer timing and performance:
+
+| Configuration | Wall Time (s) | Speedup vs Upstream |
+|---|---:|---|
+| Upstream serial | 523.13 | 1.0× |
+| Optimized serial (linked-cell, 1 thread) | 21.94 | 23.8× |
+| Optimized OpenMP (8 threads) | 5.36 | 97.4× |
 
 The corresponding `summary.dat`, `Total_psd.txt`, and `Total_psd_cumulative.txt` files are stored in each of those `polymers/` subdirectories. For this non-percolating polymer case, the original upstream `D` field is not used as a validation target; the optimized code reports `D = 0` and `D_axes none`.
-
-## Case Studies
-
-The bundled case studies cover MOFs, zeolites, and slit-pore systems, with example structures and reference outputs for comparison.
 
 ## Windows Usage
 
