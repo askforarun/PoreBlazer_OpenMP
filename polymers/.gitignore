@@ -3,5 +3,8 @@
 **/new.xyz
 **/probe_occupiable_volume.xyz
 **/poreblazer_upstream.exe
+**/poreblazer_local.exe
+**/run.out
+**/time.txt
 **/psd_plot.pdf
 **/psd_plot.svg
