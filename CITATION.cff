@@ -1,0 +1,27 @@
+cff-version: 1.2.0
+message: "If you use this optimized PoreBlazer fork, please cite the software and the original PoreBlazer publication."
+title: "PoreBlazer-performance-optimizations"
+type: software
+license: "GPL-3.0-or-later"
+authors:
+  - family-names: "Sridhar"
+    given-names: "Arun Srikanth"
+    email: "askforarun@gmail.com"
+  - family-names: "Sarkisov"
+    given-names: "Lev"
+repository-code: "https://github.com/askforarun/PoreBlazer"
+url: "https://github.com/askforarun/PoreBlazer"
+preferred-citation:
+  type: article
+  authors:
+    - family-names: "Sarkisov"
+      given-names: "Lev"
+    - family-names: "Harrison"
+      given-names: "Andrew"
+  title: "Computational structure characterisation tools in application to ordered and disordered porous materials"
+  journal: "Molecular Simulation"
+  year: 2011
+  volume: 37
+  issue: 15
+  start: 1248
+  end: 1257
