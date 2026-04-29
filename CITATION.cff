@@ -1,5 +1,5 @@
 cff-version: 1.2.0
-message: "If you use this optimized PoreBlazer fork, please cite this software record and the original PoreBlazer publication."
+message: "If you use this optimized PoreBlazer fork, please cite this software record. Please also cite the original PoreBlazer publication separately."
 title: "PoreBlazer-performance-optimizations"
 type: software
 license: "GPL-3.0-or-later"
@@ -7,8 +7,6 @@ authors:
   - family-names: "Sridhar"
     given-names: "Arun Srikanth"
     email: "askforarun@gmail.com"
-  - family-names: "Sarkisov"
-    given-names: "Lev"
 repository-code: "https://github.com/askforarun/PoreBlazer"
 url: "https://github.com/askforarun/PoreBlazer"
 preferred-citation:
@@ -17,8 +15,6 @@ preferred-citation:
     - family-names: "Sridhar"
       given-names: "Arun Srikanth"
       email: "askforarun@gmail.com"
-    - family-names: "Sarkisov"
-      given-names: "Lev"
   title: "PoreBlazer-performance-optimizations"
   repository-code: "https://github.com/askforarun/PoreBlazer"
   url: "https://github.com/askforarun/PoreBlazer"

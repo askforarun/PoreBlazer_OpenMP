@@ -63,7 +63,12 @@ Typical PoreBlazer workflow:
 
 ## Citation
 
-If you use PB v4.0, please cite the associated PoreBlazer v4.0 publication(s) documented in `src/README_PB_v4.0.txt`.
+If you use this optimized fork, cite the repository software record in [CITATION.cff](/users/ass2009/sharedscratch/PoreBlazer-performance-optimizations/CITATION.cff:1). If you use PoreBlazer scientifically, also cite the original PoreBlazer publication.
+
+Two separate BibTeX entries are provided in [CITATION.bib](/users/ass2009/sharedscratch/PoreBlazer-performance-optimizations/CITATION.bib:1):
+
+- one for this optimized fork as software
+- one for the original 2011 PoreBlazer paper by Sarkisov and Harrison
 
 ## Repository Contents
 
